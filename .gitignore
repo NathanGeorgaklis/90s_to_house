@@ -9,3 +9,5 @@ eval/.env
 eval/runs/
 eval/songs/
 .venv/
+!tests/real_voice_mix.wav
+!tests/real_voice_true_vocal.wav
