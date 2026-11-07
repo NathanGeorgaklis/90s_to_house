@@ -54,6 +54,7 @@ async function loadFile(file){
     const L=rs.getChannelData(0).slice(0), R=(rs.numberOfChannels>1?rs.getChannelData(1):rs.getChannelData(0)).slice(0);
     const sep=await ask({cmd:"separate",L,R,sr:SEP_SR,acappella:A.acap},[L.buffer,R.buffer],25000);
     A.sep=sep; A.vocRaw=sep.vocal;
+    if(r){const db=Analysis.detectDownbeat(sep,r); A.offset=db.offset; A.downbeatConf=db.conf;}
     regrid(); regen(newSeed()); await restretch();
     progress(null); setState("rework ready");
   }catch(e){

@@ -16,7 +16,8 @@ function analyse(buf){
   let fine=bb,bp=0;best=-1;for(let b=bb-1.5;b<=bb+1.5;b+=0.02){const [s,ph]=comb(b);if(s>best){best=s;fine=b;bp=ph;}}
   if(Math.abs(fine-Math.round(fine))<0.06){fine=Math.round(fine);bp=comb(fine)[1];}
   const beat=60/fine,offAbs=st+bp/fr;
-  return {bpm:Math.round(fine*10)/10,offset:((offAbs%beat)+beat)%beat};
+  // offset = beat phase only (which beat starts the bar is decided by Analysis.detectDownbeat)
+  return {bpm:Math.round(fine*10)/10,offset:((offAbs%beat)+beat)%beat,onset:o,fr,start:st};
 }
 async function renderOffline(){
   const bars=A.form==="loop"?A.loopBars*Math.max(1,Math.ceil(32/A.loopBars)):A.arr.bars.length;

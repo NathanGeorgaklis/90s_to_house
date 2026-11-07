@@ -47,6 +47,42 @@ const Analysis = (() => {
     return out;
   }
 
+  /**
+   * Downbeat: which of the four beat positions starts the bar. Tempo analysis only finds the beat phase.
+   * Two cues, each z-scored across the four candidates:
+   *   harmonic change - chords tend to change on bar lines (separates beat 1 from beat 3), weight 1
+   *   low-end accent  - kick on 1 and 3 against the backbeat on 2 and 4 (separates {1,3} from {2,4}), weight 0.5
+   * Returns {offset (s, in [0, bar)), conf (score margin best - second, 0 = undecided), scores}.
+   */
+  function detectDownbeat(sep, tempo) {
+    const beat = 60 / tempo.bpm, bar = 4 * beat, dur = sep.frames * sep.hop / sep.sr;
+    const base = ((tempo.offset % beat) + beat) % beat;
+    const H = [], Lw = [];
+    for (let k = 0; k < 4; k++) {
+      const off = base + k * beat; let s = 0, n = 0;
+      for (let t = off + bar; t + 2 * beat < dur; t += bar) {
+        const a = norm(chromaSpan(sep, t - 2 * beat, t)), b = norm(chromaSpan(sep, t, t + 2 * beat));
+        let d = 0; for (let p = 0; p < 12; p++) d += a[p] * b[p];
+        if (a.some(v => v) && b.some(v => v)) { s += 1 - d; n++; }
+      }
+      H.push(n ? s / n : 0);
+    }
+    if (tempo.onset && tempo.fr) {
+      const o = tempo.onset, end = tempo.start + o.length / tempo.fr;
+      const at = t => { const i = Math.round((t - tempo.start) * tempo.fr); let m = 0; for (let j = i - 3; j <= i + 3; j++) if (j >= 0 && j < o.length && o[j] > m) m = o[j]; return m; };
+      for (let k = 0; k < 4; k++) {
+        let s = 0, n = 0;
+        for (let t = base + k * beat; t + 4 * beat < end; t += bar) { if (t < tempo.start) continue; s += at(t) + at(t + 2 * beat) - at(t + beat) - at(t + 3 * beat); n++; }
+        Lw.push(n ? s / n : 0);
+      }
+    } else for (let k = 0; k < 4; k++) Lw.push(0);
+    const z = xs => { const m = xs.reduce((a, b) => a + b, 0) / xs.length, sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length); return xs.map(x => sd > 1e-9 ? (x - m) / sd : 0); };
+    const zH = z(H), zL = z(Lw), score = zH.map((h, k) => h + 0.5 * zL[k]);
+    const order = score.map((s, k) => [s, k]).sort((a, b) => b[0] - a[0]);
+    const k = order[0][1];
+    return { offset: (base + k * beat) % bar, conf: +(order[0][0] - order[1][0]).toFixed(3), scores: score.map(s => +s.toFixed(3)) };
+  }
+
   /** Krumhansl–Schmuckler key estimate. Returns {pc, mode, name, conf}. */
   function detectKey(sep) {
     const tot = new Float64Array(12);
@@ -128,6 +164,6 @@ const Analysis = (() => {
     song.slice().sort((a, b) => va[b] - va[a]).forEach(sb => { if (hooks.length < 3 && hooks.every(h => Math.abs(h - sb) >= 4)) hooks.push(sb); });
     return { bars, blocks, runs, hookBar, hooks };
   }
-  return { NAMES, detectChords, detectKey, vocalPerBar, arrange };
+  return { NAMES, detectChords, detectKey, detectDownbeat, vocalPerBar, arrange };
 })();
 if (typeof module !== "undefined") module.exports = Analysis;
