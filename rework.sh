@@ -57,7 +57,7 @@ case "${1:-help}" in
   deploy)
     need_venv; need_env
     echo "Deploying. The first deploy builds three images (PyTorch with CUDA is large): expect 5-15 minutes."
-    out=$(.venv/bin/modal deploy modal_app.py 2>&1 | tee /dev/stderr) || die "modal deploy failed (see the messages above)."
+    out=$(COLUMNS=250 .venv/bin/modal deploy modal_app.py 2>&1 | tee /dev/stderr) || die "modal deploy failed (see the messages above)."
     url=$(echo "$out" | grep -Eo 'https://[A-Za-z0-9.-]*web[A-Za-z0-9.-]*\.modal\.run' | head -1 || true)
     [ -n "$url" ] || die "deploy finished but no API URL was found in its output above."
     grep -v '^REWORK_API_URL=' "$ENV" > "$ENV.tmp" || true; mv "$ENV.tmp" "$ENV"

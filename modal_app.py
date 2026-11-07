@@ -26,8 +26,9 @@ light = (modal.Image.debian_slim(python_version="3.12")
          .add_local_python_source("service"))
 
 # GPU image: PyTorch + audio-separator for stage 1.
+# build-essential: diffq (an audio-separator dependency) has no Python 3.12 wheel and compiles a C extension.
 gpu_image = (modal.Image.debian_slim(python_version="3.12")
-             .apt_install("ffmpeg")
+             .apt_install("ffmpeg", "build-essential")
              .pip_install("torch==2.15.0", "torchaudio==2.11.1", "audio-separator==0.48.0", "audioread==3.1.0", "soundfile==0.14.0", *API_PKGS)
              .add_local_python_source("pipeline", "service"))
 
