@@ -27,11 +27,10 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import manifest  # noqa: E402
 import metrics  # noqa: E402
 
 EVAL = Path(__file__).resolve().parent
-STYLES = {"peak", "bounce", "minimal", "melodic", "afro", "speedg", "bibi", "pawsa", "cruz", "beltran", "rossi",
-          "lukedean", "maxdean", "baker", "prospa", "stussy", "vocal", "deep", "piano"}
 TRUTH_FIELDS = ["truth_bpm", "truth_first_downbeat_s", "truth_key", "truth_chords"]
 HUMAN_COLUMNS = ["sep_quality_1to5", "bleed_1to5", "tempo_grid_ok_YN", "vocal_beat_alignment_1to5", "arrangement_1to5",
                  "mix_1to5", "master_1to5", "overall_1to5", "would_play_to_someone_YN", "first_failed_stage",
@@ -52,43 +51,6 @@ def sha256_file(p: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def read_manifest(path: Path) -> list[dict]:
-    with open(path, newline="") as f:
-        rows = [r for r in csv.DictReader(f) if any(v.strip() for v in r.values() if v)]
-    problems, ids = [], set()
-    for i, r in enumerate(rows, 2):
-        tag = f"line {i} ({r.get('id') or 'no id'})"
-        if not r.get("id"): problems.append(f"{tag}: id is empty")
-        elif r["id"] in ids: problems.append(f"{tag}: duplicate id")
-        ids.add(r.get("id"))
-        f = (path.parent / r.get("file", "")) if r.get("file") and not Path(r["file"]).is_absolute() else Path(r.get("file") or "")
-        if not r.get("file") or not f.exists(): problems.append(f"{tag}: audio file not found: {f}")
-        r["_path"] = str(f)
-        for k in ("rights_basis", "rights_confirmed_by"):
-            if not (r.get(k) or "").strip(): problems.append(f"{tag}: {k} is empty (required before any processing)")
-        if (r.get("style") or "").strip() and r["style"].strip() not in STYLES: problems.append(f"{tag}: unknown style '{r['style']}'")
-        tb = (r.get("truth_bpm") or "").strip()
-        if not tb: problems.append(f"{tag}: truth_bpm is empty (write the BPM, or 'unknown')")
-        elif tb.lower() != "unknown":
-            try: float(tb)
-            except ValueError: problems.append(f"{tag}: truth_bpm '{tb}' is not a number")
-        tk = (r.get("truth_key") or "").strip()
-        if not tk: problems.append(f"{tag}: truth_key is empty (write the key, e.g. 'A minor', or 'unknown')")
-        else:
-            try: metrics.parse_key(tk)
-            except ValueError as e: problems.append(f"{tag}: {e}")
-        for c in (r.get("truth_chords") or "").split():
-            try: metrics.parse_chord(c)
-            except ValueError as e: problems.append(f"{tag}: {e}")
-    if problems:
-        print("Manifest problems; nothing was run:\n  " + "\n  ".join(problems))
-        sys.exit(2)
-    for r in rows:   # 'unknown' means no truth for that field
-        for k in ("truth_bpm", "truth_key"):
-            if (r.get(k) or "").strip().lower() == "unknown": r[k] = ""
-    return rows
 
 
 def freeze_truth(rows: list[dict], new_version_reason: str | None) -> dict:
@@ -163,15 +125,14 @@ def main():
     ap.add_argument("--manifest", default=str(EVAL / "songs.csv"))
     ap.add_argument("--api"); ap.add_argument("--key")
     ap.add_argument("--limit", type=int); ap.add_argument("--run-id")
-    ap.add_argument("--default-style", default="pawsa")
     ap.add_argument("--new-truth-version", metavar="REASON")
     ap.add_argument("--only", help="comma-separated song ids to rerun (retests after a fix)")
     a = ap.parse_args()
     load_env(EVAL / ".env")
     url, key = a.api or os.environ.get("REWORK_API_URL"), a.key or os.environ.get("REWORK_API_KEY", "")
     if not url:
-        sys.exit("No API URL: deploy first (./rework.sh deploy) or pass --api")
-    rows = read_manifest(Path(a.manifest))
+        sys.exit("No API URL: deploy first (bash rework.sh deploy) or pass --api")
+    rows = manifest.load(Path(a.manifest))
     truth = freeze_truth(rows, a.new_truth_version)
     if a.only:
         keep = set(a.only.split(",")); rows = [r for r in rows if r["id"] in keep]
@@ -187,7 +148,7 @@ def main():
     first_done = None
     for i, r in enumerate(rows, 1):
         sd = out / r["id"]; sd.mkdir(exist_ok=True)
-        style = (r.get("style") or "").strip() or a.default_style
+        style = r["style"]
         seed = int(hashlib.sha256(r["id"].encode()).hexdigest()[:8], 16)   # fixed per song: reruns are comparable
         print(f"[{i}/{len(rows)}] {r['id']} — {r.get('title')} ({style})", flush=True)
         t0 = time.time()
@@ -236,7 +197,7 @@ def main():
                 res = json.loads((out / r["id"] / "result.json").read_text())
                 at = ((res.get("objective") or {}).get("stem_listen_at_s")) or ""
                 w.writerow([r["id"], r.get("title"), r.get("artist"), f"{r['id']}/rework.wav", f"{r['id']}/vocal_stem.wav", " ".join(map(str, at))] + [""] * len(HUMAN_COLUMNS))
-    print(f"\nDone. Listen and fill in {card} (see eval/LISTENING.md), then: python eval/report.py {out}")
+    print(f"\nDone. Listen and fill in {card} (see eval/LISTENING.md), then: bash rework.sh report")
 
 
 if __name__ == "__main__":

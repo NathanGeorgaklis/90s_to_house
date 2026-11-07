@@ -7,7 +7,9 @@ __pycache__/
 !tests/synth_true_vocal.wav
 eval/.env
 eval/runs/
-eval/songs/
+eval/songs/*
+!eval/songs/.gitkeep
 .venv/
 !tests/real_voice_mix.wav
 !tests/real_voice_true_vocal.wav
+eval/selftest/

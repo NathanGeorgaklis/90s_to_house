@@ -133,6 +133,8 @@ def process_job(store: Store, runner: Runner, jid: str) -> dict:
             m["model_load_s"] = round(sep.get("model_load_s", 0.0), 2)
             m["gpu_cold_start"] = bool(sep.get("cold_start"))
             m["gpu_type"] = RESOURCES["separate"]["gpu"]
+            m["gpu_device"] = sep.get("device")          # what the container actually used, e.g. "NVIDIA L4"
+            m["separation_model"] = sep.get("model")
         else:
             m.update(separation_wall_s=0.0, gpu_billed_s=0.0, separation_s=0.0)
         store.write_status(jid, state="running", stage="analysing, generating beat, arranging, rendering")

@@ -1,13 +1,6 @@
 """Modal deployment: AI vocal separation on an L4 GPU, everything else on CPU, job API over HTTPS.
 
-One-time setup (run from your Mac, in this folder):
-    pip install modal && modal setup                       # sign in (opens the browser)
-    modal secret create rework-api REWORK_API_KEY=<long random string>
-    modal deploy modal_app.py                              # prints the API URL
-
-Then:
-    modal run modal_app.py::selftest                       # deployment check on the bundled test clip
-    modal run modal_app.py::approve --manifest eval/songs.csv   # record rights approvals for your songs
+Use rework.sh (see RUN_ME_FIRST.md): setup, deploy, selftest, approve, eval, report.
 
 Same job logic as the local server (service.py). Storage is the Modal Volume "rework-data" mounted at /data.
 Written against Modal 1.x; this file has not yet been run on Modal (the build sandbox cannot reach Modal's API).
@@ -24,22 +17,25 @@ app = modal.App("ai-house-rework")
 vol = modal.Volume.from_name("rework-data", create_if_missing=True)
 api_secret = modal.Secret.from_name("rework-api")
 
+# Package versions are pinned to the ones the tests ran against (7 Nov 2026).
+API_PKGS = ["fastapi==0.162.0", "starlette==1.7.0", "pydantic==2.13.5", "python-multipart==0.0.32"]
+
 # Small image for the API, the job orchestrator and admin tasks (fast cold starts).
 light = (modal.Image.debian_slim(python_version="3.12")
-         .pip_install("fastapi[standard]==0.115.*", "python-multipart")
+         .pip_install(*API_PKGS)
          .add_local_python_source("service"))
 
 # GPU image: PyTorch + audio-separator for stage 1.
 gpu_image = (modal.Image.debian_slim(python_version="3.12")
              .apt_install("ffmpeg")
-             .pip_install("torch", "torchaudio", "audio-separator", "audioread", "soundfile", "fastapi[standard]==0.115.*", "python-multipart")
+             .pip_install("torch==2.15.0", "torchaudio==2.11.1", "audio-separator==0.48.0", "audioread==3.1.0", "soundfile==0.14.0", *API_PKGS)
              .add_local_python_source("pipeline", "service"))
 
 # CPU image: Node + the shared production engine for stages 2-6.
 cpu_image = (modal.Image.debian_slim(python_version="3.12")
              .apt_install("curl", "ca-certificates", "ffmpeg")
              .run_commands("curl -fsSL https://deb.nodesource.com/setup_22.x | bash -", "apt-get install -y nodejs")
-             .pip_install("fastapi[standard]==0.115.*", "python-multipart")
+             .pip_install(*API_PKGS)
              .add_local_dir("engine", f"{APP_DIR}/engine", copy=True, ignore=["node_modules", "__pycache__"])
              .run_commands(f"cd {APP_DIR}/engine && npm install --omit=dev")
              .add_local_file("pipeline.py", f"{APP_DIR}/pipeline.py", copy=True)
@@ -100,9 +96,18 @@ class ModalRunner:
         return render_cpu.remote(sha, jid, style, seed, pitch, cached)
 
 
+def _reload():
+    """Best effort: a reload can fail while a file on the volume is open (e.g. a download in progress).
+    Then this request sees the volume as of the last successful reload."""
+    try:
+        vol.reload()
+    except Exception:
+        pass
+
+
 def _store():
     import service
-    return service.Store(Path("/data"), on_write=vol.commit, on_read=vol.reload)
+    return service.Store(Path("/data"), on_write=vol.commit, on_read=_reload)
 
 
 @app.function(image=light, cpu=0.125, memory=512, volumes=VOLUMES, timeout=3600)
@@ -123,72 +128,8 @@ def web():
 def write_approvals(entries: dict) -> int:
     """Merge rights approvals into /data/rights/approved.json (admin only: called from your machine via `approve`)."""
     store = _store()
-    vol.reload()
+    _reload()
     cur = store.approved()
     cur.update(entries)
     store.set_approved(cur)
     return len(cur)
-
-
-@app.function(image=light, volumes=VOLUMES, timeout=3600)
-def submit_direct(song: bytes, style: str, seed: int | None) -> str:
-    """Admin path used by `selftest`: store an approved song and start a job without HTTP."""
-    import service
-    vol.reload()
-    store = _store()
-    sha = service.sha256_bytes(song)
-    ok, why = service.rights_check(store, sha)
-    if not ok:
-        raise PermissionError(why)
-    d = store.song_dir(sha); d.mkdir(parents=True, exist_ok=True)
-    (d / "song").write_bytes(song)
-    vol.commit()
-    jid = service.create_job(store, sha, style, seed, "natural")
-    return jid
-
-
-@app.local_entrypoint()
-def approve(manifest: str = "eval/songs.csv"):
-    """Record rights approvals for every song in the manifest that has a rights basis and a confirmer."""
-    import csv, hashlib, time as _t
-    base = Path(manifest).parent
-    entries, skipped = {}, []
-    with open(manifest, newline="") as f:
-        for row in csv.DictReader(f):
-            p = (base / row["file"]) if not Path(row["file"]).is_absolute() else Path(row["file"])
-            if not row.get("rights_basis", "").strip() or not row.get("rights_confirmed_by", "").strip():
-                skipped.append(f"{row.get('id')}: missing rights_basis or rights_confirmed_by"); continue
-            if not p.exists():
-                skipped.append(f"{row.get('id')}: file not found {p}"); continue
-            sha = hashlib.sha256(p.read_bytes()).hexdigest()
-            entries[sha] = {"title": row.get("title"), "artist": row.get("artist"), "rights_basis": row["rights_basis"],
-                            "confirmed_by": row["rights_confirmed_by"], "approved_at": _t.strftime("%Y-%m-%dT%H:%M:%S")}
-    total = write_approvals.remote(entries) if entries else 0
-    print(f"approved {len(entries)} songs (total on file: {total})")
-    for s in skipped:
-        print("SKIPPED", s)
-
-
-@app.local_entrypoint()
-def selftest(clip: str = "tests/real_voice_mix.wav", style: str = "pawsa"):
-    """Deployment check on the bundled test clip (public-domain voice over a CC BY loop; not part of the evaluation).
-    Runs a full rework, then a new beat, and prints timing and cost."""
-    import hashlib, json
-    data = Path(clip).read_bytes()
-    sha = hashlib.sha256(data).hexdigest()
-    write_approvals.remote({sha: {"title": "selftest clip", "rights_basis": "public-domain voice (LibriVox) over CC BY loop (Admiral Bob, Choice)",
-                                  "confirmed_by": "bundled test asset"}})
-    t = time.time()
-    jid = submit_direct.remote(data, style, 7)
-    first = run_job.remote(jid)
-    print("FIRST", json.dumps({"state": first["state"], "error": first.get("error"), "metrics": first.get("metrics")}, indent=1))
-    print("client wall s", round(time.time() - t, 1))
-    if first["state"] != "done":
-        raise SystemExit(1)
-    child = submit_direct.remote(data, style, 8)
-    second = run_job.remote(child)
-    print("NEW BEAT", json.dumps({"state": second["state"], "metrics": second.get("metrics")}, indent=1))
-    ok = second["state"] == "done" and second["metrics"]["separation_cached"] and second["report"]["analysis_cached"]
-    print("SELFTEST", "PASSED" if ok else "FAILED")
-    if not ok:
-        raise SystemExit(1)

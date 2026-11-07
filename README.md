@@ -29,23 +29,23 @@ the same song, style and seed.
 ## Deploy on Modal and run the evaluation (from your Mac)
 
 ```bash
-./rework.sh setup      # installs tools in .venv, signs in to Modal in the browser, creates the API key (eval/.env)
-./rework.sh deploy     # builds and deploys; saves the API URL to eval/.env
-./rework.sh selftest   # full rework + new beat on the bundled test clip; prints GPU/CPU time and cost
+bash rework.sh setup      # installs tools in .venv, signs in to Modal in the browser, creates the API key (eval/.env)
+bash rework.sh deploy     # builds and deploys; saves the API URL to eval/.env
+bash rework.sh selftest   # full rework + new beat on the bundled test clip; prints GPU/CPU time and cost
 ```
 
 Then the evaluation:
 
-1. Put 20–30 songs you own or have permission to use in `eval/songs/`.
-2. Copy `eval/songs.template.csv` to `eval/songs.csv`, one row per song, **in the order they will be judged**.
+1. Only after the self-test passes: put 20–30 songs (WAV, AIFF, FLAC or MP3) you own or have permission to use in `eval/songs/`.
+2. Fill in `eval/songs.csv` (examples in `eval/songs.template.csv`), one row per song, **in the order they will be judged**.
    Fill in the rights basis and who confirmed it, and the ground truth (BPM, first downbeat time in seconds, key;
    chords per bar if you have them) **before** running anything. Write `unknown` where you don't know.
-3. `./rework.sh approve` records rights approvals (file SHA-256 + rights basis). Unapproved files are refused.
-4. `./rework.sh eval` runs every song and freezes the ground truth (`eval/truth.lock`).
+3. `bash rework.sh approve` records rights approvals (file SHA-256 + rights basis). Unapproved files are refused.
+4. `bash rework.sh eval` runs every song and freezes the ground truth (`eval/truth.lock`).
 5. Listen and fill in `eval/runs/<run>/scorecard.csv` following `eval/LISTENING.md`.
-6. `./rework.sh report` writes `results.md` with per-song results, failures by stage, the 16/20 gate, timing and cost.
+6. `bash rework.sh report` writes `results.md` with per-song results, failures by stage, the 16/20 gate, timing and cost.
 
-For a retest after a fix: `./rework.sh eval --only s03,s07 --run-id retest-s03-s07`.
+For a retest after a fix: `bash rework.sh eval --only my-song,other-song --run-id retest-1` (ids are the file names without extension).
 
 ## Run it locally
 
@@ -62,7 +62,7 @@ python -m pytest -q tests/                                            # 17 tests
 ## Rights check
 
 `POST /reworks` accepts a file only if its exact audio (SHA-256) is in `rights/approved.json` with a recorded rights
-basis and confirmer (`./rework.sh approve`). On a local machine, `REWORK_ALLOW_UNVERIFIED_UPLOADS=1` also allows
+basis and confirmer (`bash rework.sh approve`). On a local machine, `REWORK_ALLOW_UNVERIFIED_UPLOADS=1` also allows
 uploads for internal testing; that switch is ignored on Modal. Before any public use, approvals must come from audio
 fingerprinting against cleared catalogue. See the plan document's licensing section.
 
