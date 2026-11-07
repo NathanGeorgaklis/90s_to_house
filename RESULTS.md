@@ -49,3 +49,16 @@ run on a Modal L4 GPU to get real per-song cost and time.
 - Tempo and chord accuracy on real songs (the voice test above is speech, not singing, over a loop).
 
 Test audio credits: LibriVox recording (public domain); "Choice" by Admiral Bob (CC BY), via the librosa example data.
+
+## Harness dry run — 7 November 2026 (local CPU, DSP separation; not part of the evaluation)
+
+Three test songs with known answers (two synthetic songs at 100 and 118 BPM with known downbeats and chords, and the
+voice-over-loop clip) were run through the full harness against the local server.
+
+| Finding | Stage | Evidence | Action |
+| --- | --- | --- | --- |
+| Bars started on the wrong beat | 2 analysis | Downbeat off by exactly one beat (598 ms, 505 ms) while beat phase was right within 3 ms; 3/8 synthetic cases correct | **Fixed**: downbeat detection; 8/8 within 60 ms (worst 9 ms); chord accuracy 0.75 → 1.0 |
+| Masters quiet; one true peak over the limit | 6 master | −15 to −18 LUFS integrated; true peak −0.17 dBTP on one song | **Not fixed yet** (failure-first: wait for listening results on earlier stages) |
+| Status reads returned HTTP 500 during writes | service | Concurrent read saw a half-written status file | Fixed: atomic writes; regression test fails on old code |
+| Booleans stored as the string "False" | harness | numpy booleans serialised as text | Fixed; regression test |
+| Chord accuracy compared unaligned bars | harness | Lists starting at different bars | Fixed: bars aligned by time; regression test |

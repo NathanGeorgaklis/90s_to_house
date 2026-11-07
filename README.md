@@ -17,38 +17,53 @@ the same song, style and seed.
 | Path | What it is |
 | --- | --- |
 | `pipeline.py` | The pipeline and a CLI: separation, then render. Fails closed: if AI separation is requested and unavailable, it stops with the reason; it never falls back silently. |
-| `app.py` | FastAPI job API: `POST /reworks`, `GET /reworks/{id}`, `GET /reworks/{id}/audio`, `POST /reworks/{id}/new-beat`, `GET /styles`. |
+| `service.py` | Job API, rights gate, per-song cache (vocal + analysis), timing and cost metrics. Shared by local and Modal. |
+| `app.py` | Local server on `service.py`: `POST /reworks`, `GET /reworks/{id}`, `/audio`, `/stem`, `/analysis`, `POST /reworks/{id}/new-beat`. |
 | `engine/render.js` | Render worker: analysis, unique beat, arrangement, offline render (Web Audio for Node). |
 | `engine/build_engine.py` | Rebuilds `rework-engine.js` from `../house-rework/src` after engine changes. |
-| `modal_app.py` | Deployment on Modal: separation on an L4 GPU, render on CPU. **Not yet deployed.** |
+| `modal_app.py` | Deployment on Modal: separation on an L4 GPU, render on CPU, the same API. **Not yet deployed.** |
+| `rework.sh` | Setup, deploy, selftest, approve, eval, report: one command each, from a Mac. |
+| `eval/` | Evaluation harness: manifest template, runner, measurements, report, listening protocol, negative results. |
 | `tests/` | Synthetic test song with a known vocal, chords and tempo; API tests. |
 
-## Run it
+## Deploy on Modal and run the evaluation (from your Mac)
+
+```bash
+./rework.sh setup      # installs tools in .venv, signs in to Modal in the browser, creates the API key (eval/.env)
+./rework.sh deploy     # builds and deploys; saves the API URL to eval/.env
+./rework.sh selftest   # full rework + new beat on the bundled test clip; prints GPU/CPU time and cost
+```
+
+Then the evaluation:
+
+1. Put 20–30 songs you own or have permission to use in `eval/songs/`.
+2. Copy `eval/songs.template.csv` to `eval/songs.csv`, one row per song, **in the order they will be judged**.
+   Fill in the rights basis and who confirmed it, and the ground truth (BPM, first downbeat time in seconds, key;
+   chords per bar if you have them) **before** running anything. Write `unknown` where you don't know.
+3. `./rework.sh approve` records rights approvals (file SHA-256 + rights basis). Unapproved files are refused.
+4. `./rework.sh eval` runs every song and freezes the ground truth (`eval/truth.lock`).
+5. Listen and fill in `eval/runs/<run>/scorecard.csv` following `eval/LISTENING.md`.
+6. `./rework.sh report` writes `results.md` with per-song results, failures by stage, the 16/20 gate, timing and cost.
+
+For a retest after a fix: `./rework.sh eval --only s03,s07 --run-id retest-s03-s07`.
+
+## Run it locally
 
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio   # or the CUDA build on a GPU box
 pip install -r requirements.txt
 (cd engine && npm install)
-
-# CLI
 python pipeline.py song.mp3 --style pawsa --out rework.wav            # AI separation (downloads the model once)
 python pipeline.py song.mp3 --style afro --no-ai --out quick.wav      # DSP fallback, no GPU, lower quality
-python pipeline.py song.mp3 --style pawsa --vocal stems/vocals.wav    # reuse a stem: new beat in seconds
-
-# API (internal testing only: see Rights check)
-REWORK_ALLOW_UNVERIFIED_UPLOADS=1 uvicorn app:app --port 8000
-curl -F file=@song.mp3 -F style=pawsa localhost:8000/reworks
-
-# Tests (DSP fallback, about 1 minute)
-python -m pytest -q tests/
+REWORK_USE_AI=0 REWORK_ALLOW_UNVERIFIED_UPLOADS=1 uvicorn app:app     # local API (internal testing only)
+python -m pytest -q tests/                                            # 17 tests, about 3 minutes
 ```
-
-Styles: `peak bounce minimal melodic afro speedg bibi pawsa cruz beltran rossi lukedean maxdean baker prospa stussy vocal deep piano`.
 
 ## Rights check
 
-`POST /reworks` refuses every upload unless `REWORK_ALLOW_UNVERIFIED_UPLOADS=1` is set. That switch is for internal
-testing with songs you hold rights to. Before any public use, replace `rights_check()` in `app.py` with audio
+`POST /reworks` accepts a file only if its exact audio (SHA-256) is in `rights/approved.json` with a recorded rights
+basis and confirmer (`./rework.sh approve`). On a local machine, `REWORK_ALLOW_UNVERIFIED_UPLOADS=1` also allows
+uploads for internal testing; that switch is ignored on Modal. Before any public use, approvals must come from audio
 fingerprinting against cleared catalogue. See the plan document's licensing section.
 
 ## Measured so far
