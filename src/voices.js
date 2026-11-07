@@ -3,7 +3,7 @@
 const DEFAULT_SND={kf0:155,kf1:48,kdec:0.38,clapF:1300,hatF:8500,bassCut:1,bassQ:1,verb:0.35,dlyFb:0.35,dlyBeats:0.75};
 const SND=()=>(A.groove&&A.groove.snd)||DEFAULT_SND;
 function env(gn,t,a,peak,dec){gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(peak,t+a);gn.gain.exponentialRampToValueAtTime(0.0001,t+a+dec);}
-function noiseSrc(t,dur){const s=ctx.createBufferSource();s.buffer=noise;s.loop=true;s.start(t,Math.random()*0.5);s.stop(t+dur+0.05);return s;}
+function noiseSrc(t,dur){const s=ctx.createBufferSource();s.buffer=noise;s.loop=true;s.start(t,R()*0.5);s.stop(t+dur+0.05);return s;}
 function kick(t){
   const o=ctx.createOscillator(),gn=ctx.createGain();o.type="sine";
   const k=SND(); o.frequency.setValueAtTime(k.kf0,t);o.frequency.exponentialRampToValueAtTime(k.kf1,t+0.09);

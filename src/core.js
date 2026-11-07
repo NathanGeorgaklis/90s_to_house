@@ -25,7 +25,7 @@ async function renderOffline(){
   const saved={ctx,N,noise,lastAcid,prevInfo,buildStart,breakdown};
   ctx=off;N={};rendering=true;buildStart=-1;breakdown=false;lastAcid=null;prevInfo=null;
   let out;
-  try{ buildGraph(); const sp=60/A.target/4; for(let st=0;st<bars*16;st++) playStep(st,0.05+st*sp); out=await off.startRendering(); }
+  try{ reseedNoise(A.seed||1); buildGraph(); const sp=60/A.target/4; for(let st=0;st<bars*16;st++) playStep(st,0.05+st*sp); out=await off.startRendering(); }
   finally{ ({ctx,N,noise,lastAcid,prevInfo,buildStart,breakdown}=saved); rendering=false; }
   return out;
 }

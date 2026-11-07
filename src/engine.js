@@ -8,6 +8,13 @@ const A={buf:null,srcBpm:null,offset:0,target:127,style:"peak",key:9,mode:"minor
 let ctx=null,N={},noise=null,playing=false,timer=null,step=0,nextTime=0,buildStart=-1,breakdown=false;
 let T0=0,lights=[],live=[],prevInfo=null,endTimer=null,rendering=false;
 
+/* ---------------- Seeded noise ----------------
+   Hi-hats, claps and reverb use noise. A seeded generator makes an offline render bit-identical for the same
+   beat code, so evaluation runs can be compared exactly. */
+let noiseState=1;
+function R(){noiseState=(noiseState+0x6D2B79F5)|0;let t=Math.imul(noiseState^(noiseState>>>15),1|noiseState);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;}
+function reseedNoise(s){noiseState=(s>>>0)||1;}
+
 /* ---------------- Timing helpers ----------------
    song time τ (seconds in the original file) → vocal buffer time τ·s, played at rate q → output time τ/r.  */
 function rate(){return A.srcBpm? A.target/A.srcBpm : 1;}
@@ -44,11 +51,11 @@ function buildGraph(){
   N.verb=ctx.createConvolver(); N.verb.buffer=impulse(2.2); N.verbIn=g(); N.verbIn.gain.value=0.35; N.verbIn.connect(N.verb).connect(N.duckB);
   N.voxVerb=g(); N.voxVerb.gain.value=0.22; N.voxG.connect(N.voxVerb).connect(N.verbIn);
   N.voxDly=g(); N.voxDly.gain.value=0; N.voxG.connect(N.voxDly).connect(N.dly);
-  noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate); const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate); const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=R()*2-1;
   applyMix();
 }
 function ensureCtx(){ if(ctx) return ctx; const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC(); buildGraph(); return ctx; }
-function impulse(sec){const sr=ctx.sampleRate,len=Math.floor(sr*sec),b=ctx.createBuffer(2,len,sr);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}return b;}
+function impulse(sec){const sr=ctx.sampleRate,len=Math.floor(sr*sec),b=ctx.createBuffer(2,len,sr);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(R()*2-1)*Math.pow(1-i/len,3);}return b;}
 function applyMix(){
   const m=A.mix; if(!ctx) return; const t=ctx.currentTime;
   N.voxG.gain.setTargetAtTime(m.vox,t,0.02);
