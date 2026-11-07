@@ -1,0 +1,6 @@
+{
+  "name": "rework-engine",
+  "private": true,
+  "description": "Shared house rework production engine (bundled from the browser app's sources) for server-side rendering",
+  "dependencies": { "node-web-audio-api": "2.2.0" }
+}

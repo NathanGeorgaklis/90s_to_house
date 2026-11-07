@@ -1,0 +1,7 @@
+data/
+models/
+engine/node_modules/
+__pycache__/
+*.wav
+!tests/synth_mix.wav
+!tests/synth_true_vocal.wav

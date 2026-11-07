@@ -1,0 +1,11 @@
+# CPU install: pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+torch
+torchaudio
+audio-separator
+audioread
+soundfile
+fastapi
+uvicorn
+python-multipart
+pytest
+httpx
