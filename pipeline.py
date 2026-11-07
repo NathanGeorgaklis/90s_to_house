@@ -36,21 +36,52 @@ class ReworkResult:
     report: dict = field(default_factory=dict)
 
 
-def separate_vocal(mix_path: Path, work_dir: Path, model: str = DEFAULT_MODEL) -> Path:
-    """Run the AI separation model and return the path of the vocal stem (WAV)."""
+_SEPARATORS: dict = {}   # model filename -> loaded Separator, reused across songs in a warm container
+
+
+def separate_vocal_timed(mix_path: Path, work_dir: Path, model: str = DEFAULT_MODEL, require_gpu: bool = False) -> tuple[Path, dict]:
+    """Run the AI separation model. Returns (vocal stem path, timings). The loaded model is kept for the next song.
+    require_gpu=True refuses to run on CPU, so a misconfigured GPU cannot silently produce CPU timings."""
     try:
+        import torch
         from audio_separator.separator import Separator
     except ImportError as e:  # fail closed: never silently fall back
-        raise ReworkError(f"vocal separation unavailable: audio-separator is not installed ({e})") from e
-    out_dir = work_dir / "stems"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    sep = Separator(output_dir=str(out_dir), model_file_dir=str(MODEL_DIR), output_single_stem="Vocals", output_format="WAV")
-    sep.load_model(model_filename=model)
+        raise ReworkError(f"vocal separation unavailable: {e}") from e
+    cuda = torch.cuda.is_available()
+    if require_gpu and not cuda:
+        raise ReworkError("vocal separation: a GPU was required but CUDA is not available")
+    t = {"device": torch.cuda.get_device_name(0) if cuda else "cpu", "model": model}
+    s = time.time()
+    if model not in _SEPARATORS:
+        tmp_out = Path(tempfile.gettempdir()) / "rework-stems"
+        tmp_out.mkdir(parents=True, exist_ok=True)
+        sep = Separator(output_dir=str(tmp_out), model_file_dir=str(MODEL_DIR), output_single_stem="Vocals", output_format="WAV")
+        sep.load_model(model_filename=model)
+        _SEPARATORS[model] = sep
+        t["model_load_s"] = time.time() - s
+    else:
+        t["model_load_s"] = 0.0
+    sep = _SEPARATORS[model]
+    s = time.time()
     files = sep.separate(str(mix_path))
-    vocal = [out_dir / Path(f).name for f in files if "vocal" in Path(f).name.lower()]
-    if not vocal or not vocal[0].exists():
+    t["separation_s"] = time.time() - s
+    src = [Path(sep.output_dir) / Path(f).name for f in files if "vocal" in Path(f).name.lower()]
+    if not src or not src[0].exists():
         raise ReworkError(f"vocal separation produced no vocal stem (got {files})")
-    return vocal[0]
+    out = work_dir / "stems"
+    out.mkdir(parents=True, exist_ok=True)
+    dest = out / src[0].name
+    shutil.move(str(src[0]), dest)
+    for f in files:                                   # remove any other stems written for this song
+        p = Path(sep.output_dir) / Path(f).name
+        if p.exists():
+            p.unlink()
+    return dest, t
+
+
+def separate_vocal(mix_path: Path, work_dir: Path, model: str = DEFAULT_MODEL) -> Path:
+    """Run the AI separation model and return the path of the vocal stem (WAV)."""
+    return separate_vocal_timed(mix_path, work_dir, model)[0]
 
 
 def render(mix_path: Path, vocal_path: Path | None, style: str, out_path: Path, *, seed: int | None = None,
