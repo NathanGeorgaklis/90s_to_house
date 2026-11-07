@@ -54,16 +54,27 @@ def separate_vocal(mix_path: Path, work_dir: Path, model: str = DEFAULT_MODEL) -
 
 
 def render(mix_path: Path, vocal_path: Path | None, style: str, out_path: Path, *, seed: int | None = None,
-           pitch: str = "natural", intro: int = 8, outro: int = 8, trim: bool = True, timeout_s: int = 900) -> dict:
-    """Run the Node production engine. Returns its report (tempo, key, chords, arrangement, beat code, timings)."""
+           pitch: str = "natural", intro: int = 8, outro: int = 8, trim: bool = True, timeout_s: int = 900,
+           analysis_out: Path | None = None, vocal_out: Path | None = None, analysis_in: Path | None = None) -> dict:
+    """Run the Node production engine. Returns its report (tempo, key, chords, arrangement, beat code, timings).
+    analysis_out/vocal_out save the song analysis and the vocal used; analysis_in reuses them (new beat: no
+    separation, no analysis)."""
     if style not in STYLES:
         raise ReworkError(f"unknown style '{style}'; choose one of {', '.join(STYLES)}")
+    # the Node worker runs in engine/, so every path must be absolute
+    abs_ = lambda p: Path(p).resolve() if p else None
+    mix_path, vocal_path, out_path = abs_(mix_path), abs_(vocal_path), abs_(out_path)
+    analysis_out, vocal_out, analysis_in = abs_(analysis_out), abs_(vocal_out), abs_(analysis_in)
     if shutil.which("node") is None:
         raise ReworkError("render unavailable: Node.js is not installed")
     with tempfile.TemporaryDirectory() as tmp:
         job = {"mix": str(mix_path), "vocal": str(vocal_path) if vocal_path else None, "style": style, "seed": seed,
                "pitch": pitch, "intro": intro, "outro": outro, "trim": trim, "out": str(out_path),
-               "report": str(Path(tmp) / "report.json")}
+               "report": str(Path(tmp) / "report.json"),
+               "analysisOut": str(analysis_out) if analysis_out else None, "vocalOut": str(vocal_out) if vocal_out else None,
+               "analysisIn": str(analysis_in) if analysis_in else None}
+        if analysis_in and not vocal_path:
+            raise ReworkError("a cached analysis needs the cached vocal")
         job_path = Path(tmp) / "job.json"
         job_path.write_text(json.dumps(job))
         p = subprocess.run(["node", str(ENGINE), str(job_path)], capture_output=True, text=True, timeout=timeout_s,

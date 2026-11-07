@@ -141,6 +141,13 @@ const A={buf:null,srcBpm:null,offset:0,target:127,style:"peak",key:9,mode:"minor
 let ctx=null,N={},noise=null,playing=false,timer=null,step=0,nextTime=0,buildStart=-1,breakdown=false;
 let T0=0,lights=[],live=[],prevInfo=null,endTimer=null,rendering=false;
 
+/* ---------------- Seeded noise ----------------
+   Hi-hats, claps and reverb use noise. A seeded generator makes an offline render bit-identical for the same
+   beat code, so evaluation runs can be compared exactly. */
+let noiseState=1;
+function R(){noiseState=(noiseState+0x6D2B79F5)|0;let t=Math.imul(noiseState^(noiseState>>>15),1|noiseState);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;}
+function reseedNoise(s){noiseState=(s>>>0)||1;}
+
 /* ---------------- Timing helpers ----------------
    song time τ (seconds in the original file) → vocal buffer time τ·s, played at rate q → output time τ/r.  */
 function rate(){return A.srcBpm? A.target/A.srcBpm : 1;}
@@ -177,11 +184,11 @@ function buildGraph(){
   N.verb=ctx.createConvolver(); N.verb.buffer=impulse(2.2); N.verbIn=g(); N.verbIn.gain.value=0.35; N.verbIn.connect(N.verb).connect(N.duckB);
   N.voxVerb=g(); N.voxVerb.gain.value=0.22; N.voxG.connect(N.voxVerb).connect(N.verbIn);
   N.voxDly=g(); N.voxDly.gain.value=0; N.voxG.connect(N.voxDly).connect(N.dly);
-  noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate); const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate); const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=R()*2-1;
   applyMix();
 }
 function ensureCtx(){ if(ctx) return ctx; const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC(); buildGraph(); return ctx; }
-function impulse(sec){const sr=ctx.sampleRate,len=Math.floor(sr*sec),b=ctx.createBuffer(2,len,sr);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}return b;}
+function impulse(sec){const sr=ctx.sampleRate,len=Math.floor(sr*sec),b=ctx.createBuffer(2,len,sr);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(R()*2-1)*Math.pow(1-i/len,3);}return b;}
 function applyMix(){
   const m=A.mix; if(!ctx) return; const t=ctx.currentTime;
   N.voxG.gain.setTargetAtTime(m.vox,t,0.02);
@@ -200,7 +207,7 @@ function applyMix(){
 const DEFAULT_SND={kf0:155,kf1:48,kdec:0.38,clapF:1300,hatF:8500,bassCut:1,bassQ:1,verb:0.35,dlyFb:0.35,dlyBeats:0.75};
 const SND=()=>(A.groove&&A.groove.snd)||DEFAULT_SND;
 function env(gn,t,a,peak,dec){gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(peak,t+a);gn.gain.exponentialRampToValueAtTime(0.0001,t+a+dec);}
-function noiseSrc(t,dur){const s=ctx.createBufferSource();s.buffer=noise;s.loop=true;s.start(t,Math.random()*0.5);s.stop(t+dur+0.05);return s;}
+function noiseSrc(t,dur){const s=ctx.createBufferSource();s.buffer=noise;s.loop=true;s.start(t,R()*0.5);s.stop(t+dur+0.05);return s;}
 function kick(t){
   const o=ctx.createOscillator(),gn=ctx.createGain();o.type="sine";
   const k=SND(); o.frequency.setValueAtTime(k.kf0,t);o.frequency.exponentialRampToValueAtTime(k.kf1,t+0.09);
@@ -833,7 +840,7 @@ async function renderOffline(){
   const saved={ctx,N,noise,lastAcid,prevInfo,buildStart,breakdown};
   ctx=off;N={};rendering=true;buildStart=-1;breakdown=false;lastAcid=null;prevInfo=null;
   let out;
-  try{ buildGraph(); const sp=60/A.target/4; for(let st=0;st<bars*16;st++) playStep(st,0.05+st*sp); out=await off.startRendering(); }
+  try{ reseedNoise(A.seed||1); buildGraph(); const sp=60/A.target/4; for(let st=0;st<bars*16;st++) playStep(st,0.05+st*sp); out=await off.startRendering(); }
   finally{ ({ctx,N,noise,lastAcid,prevInfo,buildStart,breakdown}=saved); rendering=false; }
   return out;
 }

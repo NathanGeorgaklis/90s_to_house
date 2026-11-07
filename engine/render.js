@@ -1,6 +1,9 @@
 /* Render worker: song (+ optional AI-separated vocal) + style -> finished rework WAV + JSON report.
    Usage: node render.js job.json
-   job.json: { mix, vocal?, style, seed?, pitch?, intro?, outro?, trim?, out, report? }
+   job.json: { mix, vocal?, style, seed?, pitch?, intro?, outro?, trim?, out, report?, analysisOut?, analysisIn?, vocalOut? }
+   - analysisOut: save the song analysis (tempo, grid, chords, key, vocal activity) as JSON
+   - analysisIn:  reuse a saved analysis: skips decoding and analysing the song (used by "new beat"); needs `vocal`
+   - vocalOut:    write the vocal actually used (22.05 kHz mono WAV), so a later run can reuse it
    - mix:   path to the original song (wav/mp3/m4a/flac)
    - vocal: path to an AI-separated vocal stem (wav). Omit to fall back to the built-in DSP extraction.
    Every number in the report comes from the analysis of this song; nothing is filled in by default. */
@@ -23,9 +26,18 @@ async function resample(buf, channels) {
 }
 const timed = async (t, k, fn) => { const s = Date.now(); const r = await fn(); t[k] = Date.now() - s; return r; };
 
+function writeWavMono(path, x, sr) {
+  const b = Buffer.alloc(44 + x.length * 2);
+  b.write("RIFF", 0); b.writeUInt32LE(36 + x.length * 2, 4); b.write("WAVEfmt ", 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write("data", 36); b.writeUInt32LE(x.length * 2, 40);
+  for (let i = 0; i < x.length; i++) b.writeInt16LE(Math.max(-32767, Math.min(32767, Math.round(x[i] * 32767))), 44 + i * 2);
+  fs.writeFileSync(path, b);
+}
+
 async function run(job) {
   const t = {}, A = E.A;
   if (!E.STYLES[job.style]) throw new Error(`unknown style "${job.style}"; choose one of ${Object.keys(E.STYLES).join(", ")}`);
+  if (job.analysisIn) return runCached(job, t);
   const mix = await timed(t, "decode_ms", () => decode(job.mix));
   // tempo and beat grid from the original mix
   const tempo = await timed(t, "tempo_ms", async () => E.analyse(mix));
@@ -51,6 +63,26 @@ async function run(job) {
   A.chords = E.Analysis.detectChords(A.sep, A.offset, E.barSong(), A.nBars);
   A.songKey = E.Analysis.detectKey(A.sep);
   A.va = E.Analysis.vocalPerBar(A.sep, A.offset, E.barSong(), A.nBars);
+  const analysis = { version: 1, songSeconds: +mix.duration.toFixed(3), srcBpm: A.srcBpm, offset: A.offset, nBars: A.nBars, chords: A.chords,
+    songKey: A.songKey, va: A.va, mono: sepMix.mono, vocalSource };
+  if (job.analysisOut) fs.writeFileSync(job.analysisOut, JSON.stringify(analysis));
+  if (job.vocalOut) writeWavMono(job.vocalOut, vocRaw, SR);
+  return finish(job, t, analysis, vocRaw, false);
+}
+
+/** New beat from a saved analysis + saved vocal: no decoding, separation or analysis of the song. */
+async function runCached(job, t) {
+  const A = E.A;
+  if (!job.vocal) throw new Error("analysisIn needs the saved vocal (job.vocal)");
+  const an = JSON.parse(fs.readFileSync(job.analysisIn, "utf8"));
+  if (an.version !== 1) throw new Error(`unsupported analysis version ${an.version}`);
+  Object.assign(A, { srcBpm: an.srcBpm, offset: an.offset, nBars: an.nBars, chords: an.chords, songKey: an.songKey, va: an.va });
+  const v = await resample(await decode(job.vocal), 1);
+  return finish(job, t, an, v.getChannelData(0).slice(0), true);
+}
+
+async function finish(job, t, an, vocRaw, cached) {
+  const A = E.A;
   A.intro = job.intro ?? 8; A.outro = job.outro ?? 8; A.trim = job.trim ?? true; A.form = "full"; A.harmony = job.harmony || "song";
   A.arr = E.Analysis.arrange({ va: A.va, chords: A.chords, nBars: A.nBars, intro: A.intro, outro: A.outro, trimGaps: A.trim, overrides: job.overrides || {} });
   // a beat unique to this rework
@@ -64,8 +96,8 @@ async function run(job) {
   const out = await timed(t, "render_ms", () => E.renderOffline());
   fs.writeFileSync(job.out, E.wavBytes(out));
   const report = {
-    style: E.STYLES[A.style].name, beat_code: A.groove.code, seed: A.seed, vocal_source: vocalSource,
-    song: { seconds: +mix.duration.toFixed(1), bpm: A.srcBpm, key: A.songKey, mono: sepMix.mono, bars: A.nBars,
+    style: E.STYLES[A.style].name, style_id: A.style, beat_code: A.groove.code, seed: A.seed, vocal_source: an.vocalSource, analysis_cached: cached,
+    song: { seconds: +an.songSeconds.toFixed(1), bpm: A.srcBpm, first_downbeat_s: +A.offset.toFixed(3), key: A.songKey, mono: an.mono, bars: A.nBars,
       chords_confident: A.chords.filter(c => c.ok).length },
     rework: { bpm: A.target, seconds: +out.duration.toFixed(1), bars: A.arr.bars.length, sections: A.arr.blocks.map(b => `${b.type}:${b.len}`),
       vocal_pitch: A.pitch, bass: A.groove.bass.type, swing: A.groove.swing },
