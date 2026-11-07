@@ -41,6 +41,13 @@ def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def _atomic_write(p: Path, text: str) -> None:
+    """Write via a temporary file and rename, so a concurrent reader never sees a half-written file."""
+    tmp = p.with_name(f".{p.name}.{uuid.uuid4().hex[:8]}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, p)
+
+
 def cost_usd(stage: str, seconds: float) -> float:
     r = RESOURCES[stage]
     per_s = r["cpu"] * RATES["cpu_core"] + r["mem_gib"] * RATES["mem_gib"] + (RATES["gpu"][r["gpu"]] if "gpu" in r else 0.0)
@@ -68,7 +75,7 @@ class Store:
     def set_approved(self, entries: dict) -> None:
         p = self.base / "rights" / "approved.json"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(entries, indent=2))
+        _atomic_write(p, json.dumps(entries, indent=2))
         self.on_write()
 
     def status(self, jid: str) -> dict:
@@ -82,7 +89,7 @@ class Store:
         p = d / "status.json"
         cur = json.loads(p.read_text()) if p.exists() else {}
         cur.update(kv)
-        p.write_text(json.dumps(cur, indent=2))
+        _atomic_write(p, json.dumps(cur, indent=2))
         self.on_write()
         return cur
 

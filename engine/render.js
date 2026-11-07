@@ -57,6 +57,9 @@ async function run(job) {
     vocalSource = "ai-stem";
   } else { vocRaw = sepMix.vocal; vact = sepMix.vact; vocalSource = "dsp-fallback"; }
   A.sep = { ...sepMix, vact };
+  // which beat starts the bar (tempo analysis gives the beat phase only)
+  const db = E.Analysis.detectDownbeat(sepMix, tempo);
+  A.offset = db.offset;
   // bars, chords, key, vocal activity, arrangement
   const dur = Math.min(mix.duration, MAX_SEC);
   A.nBars = Math.max(1, Math.floor((dur - A.offset) / E.barSong()));
@@ -64,7 +67,7 @@ async function run(job) {
   A.songKey = E.Analysis.detectKey(A.sep);
   A.va = E.Analysis.vocalPerBar(A.sep, A.offset, E.barSong(), A.nBars);
   const analysis = { version: 1, songSeconds: +mix.duration.toFixed(3), srcBpm: A.srcBpm, offset: A.offset, nBars: A.nBars, chords: A.chords,
-    songKey: A.songKey, va: A.va, mono: sepMix.mono, vocalSource };
+    songKey: A.songKey, va: A.va, mono: sepMix.mono, vocalSource, downbeatConf: db.conf };
   if (job.analysisOut) fs.writeFileSync(job.analysisOut, JSON.stringify(analysis));
   if (job.vocalOut) writeWavMono(job.vocalOut, vocRaw, SR);
   return finish(job, t, analysis, vocRaw, false);
@@ -97,7 +100,7 @@ async function finish(job, t, an, vocRaw, cached) {
   fs.writeFileSync(job.out, E.wavBytes(out));
   const report = {
     style: E.STYLES[A.style].name, style_id: A.style, beat_code: A.groove.code, seed: A.seed, vocal_source: an.vocalSource, analysis_cached: cached,
-    song: { seconds: +an.songSeconds.toFixed(1), bpm: A.srcBpm, first_downbeat_s: +A.offset.toFixed(3), key: A.songKey, mono: an.mono, bars: A.nBars,
+    song: { seconds: +an.songSeconds.toFixed(1), bpm: A.srcBpm, first_downbeat_s: +A.offset.toFixed(3), downbeat_conf: an.downbeatConf ?? null, key: A.songKey, mono: an.mono, bars: A.nBars,
       chords_confident: A.chords.filter(c => c.ok).length },
     rework: { bpm: A.target, seconds: +out.duration.toFixed(1), bars: A.arr.bars.length, sections: A.arr.blocks.map(b => `${b.type}:${b.len}`),
       vocal_pitch: A.pitch, bass: A.groove.bass.type, swing: A.groove.swing },

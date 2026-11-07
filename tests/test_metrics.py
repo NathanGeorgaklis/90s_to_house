@@ -40,3 +40,20 @@ def test_audio_indicators_on_test_clip():
     if ai: assert ai["stem_floor_db"] < -40 and not ai["stem_floor_flag"]   # AI stem measured at 20.8 dB SDR: passes
     m = M.master_indicators(str(here / "real_voice_mix.wav"))
     assert -40 < m["lufs_integrated"] < 0 and m["true_peak_dbtp"] < 1
+
+
+def test_measure_returns_plain_json_types(tmp_path):
+    import json
+    here = Path(__file__).parent
+    row = {"truth_bpm": "90", "truth_key": "A minor"}
+    an = {"srcBpm": 90.2, "offset": 0.2, "songKey": {"pc": 9, "mode": "minor", "name": "A minor"}, "chords": []}
+    o = M.measure(row, {}, an, {"audio": str(here / "real_voice_mix.wav"), "stem": str(here / "real_voice_true_vocal.wav")})
+    back = json.loads(json.dumps(o))              # no default=str needed
+    for k in ("loudness_ok", "true_peak_ok", "stem_floor_flag", "tempo_ok", "key_ok"):
+        assert isinstance(back[k], bool), (k, type(back[k]))
+
+
+def test_chord_check_aligns_bars_in_time():
+    det = [{"pc": 9, "q": "min"}, {"pc": 5, "q": "maj"}, {"pc": 7, "q": "maj"}]   # detection starts one bar later
+    assert M.chord_check(det, ["C", "Am", "F", "G"], bar_shift=1)["chord_bar_accuracy"] == 1.0
+    assert M.chord_check(det, ["C", "Am", "F", "G"], bar_shift=0)["chord_bar_accuracy"] == 0.0

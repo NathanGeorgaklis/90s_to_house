@@ -2,7 +2,8 @@
 Run: python3 engine/build_engine.py  ->  engine/rework-engine.js
 The browser app and the server render the same way because they run the same code."""
 import pathlib
-APP = pathlib.Path(__file__).resolve().parents[2] / "house-rework"
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+APP = next((ROOT / n for n in ("browser-app", "house-rework") if (ROOT / n / "src").is_dir()), ROOT / "browser-app")
 SRC = APP / "src"
 html = (APP / "index.html").read_text()
 a = html.index("/* ---------------- Crate data ---------------- */")

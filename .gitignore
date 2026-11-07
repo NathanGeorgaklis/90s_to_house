@@ -5,3 +5,7 @@ __pycache__/
 *.wav
 !tests/synth_mix.wav
 !tests/synth_true_vocal.wav
+eval/.env
+eval/runs/
+eval/songs/
+.venv/

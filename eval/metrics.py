@@ -83,11 +83,13 @@ def key_check(detected: dict, truth: tuple[int, str]) -> dict:
     return {"key_detected": detected.get("name"), "key_relation": rel, "key_ok": rel in ("exact", "relative")}
 
 
-def chord_check(detected: list[dict], truth: list[str]) -> dict:
-    n = min(len(detected), len(truth))
+def chord_check(detected: list[dict], truth: list[str], bar_shift: int = 0) -> dict:
+    """Per-bar chord accuracy. Detected bar i is truth bar i + bar_shift (the two lists may start at different bars)."""
+    pairs = [(d, truth[i + bar_shift]) for i, d in enumerate(detected) if 0 <= i + bar_shift < len(truth)]
+    n = len(pairs)
     if n == 0:
         return {}
-    hits = sum(1 for d, t in zip(detected[:n], truth[:n]) if (d["pc"], "minor" if d["q"] == "min" else "major") == parse_chord(t))
+    hits = sum(1 for d, t in pairs if (d["pc"], "minor" if d["q"] == "min" else "major") == parse_chord(t))
     acc = hits / n
     return {"chord_bars_compared": n, "chord_bar_accuracy": round(acc, 3), "chords_ok": acc >= THRESHOLDS["chord_bar_accuracy"]}
 
@@ -142,6 +144,15 @@ def master_indicators(wav_path: str) -> dict:
             "loudness_ok": lufs >= THRESHOLDS["master_lufs_min"], "true_peak_ok": tp <= THRESHOLDS["true_peak_max_dbtp"]}
 
 
+def _plain(v):
+    """numpy scalars -> Python types, so JSON stores real booleans and numbers (np.bool_ would become the string "False")."""
+    if isinstance(v, np.generic):
+        return v.item()
+    if isinstance(v, (list, tuple)):
+        return [_plain(x) for x in v]
+    return v
+
+
 def measure(row: dict, status: dict, analysis: dict, paths: dict) -> dict:
     """All objective measurements for one song. `row` holds the frozen truth from the manifest."""
     out: dict = {}
@@ -149,13 +160,19 @@ def measure(row: dict, status: dict, analysis: dict, paths: dict) -> dict:
         out.update(tempo_check(float(analysis["srcBpm"]), float(row["truth_bpm"])))
         if row.get("truth_first_downbeat_s"):
             out.update(downbeat_check(float(analysis["offset"]), float(row["truth_first_downbeat_s"]), float(row["truth_bpm"])))
+    if analysis.get("downbeatConf") is not None:
+        out["downbeat_conf"] = analysis["downbeatConf"]
     tk = parse_key(row.get("truth_key", ""))
     if tk:
         out.update(key_check(analysis["songKey"], tk))
     if row.get("truth_chords", "").strip():
-        out.update(chord_check(analysis["chords"], row["truth_chords"].split()))
+        shift = 0
+        if row.get("truth_bpm") and row.get("truth_first_downbeat_s"):   # line the bars up in time
+            bar = 4 * 60.0 / float(row["truth_bpm"])
+            shift = round((float(analysis["offset"]) - float(row["truth_first_downbeat_s"])) / bar)
+        out.update(chord_check(analysis["chords"], row["truth_chords"].split(), shift))
     if paths.get("stem"):
         out.update(stem_indicators(paths["stem"]))
     if paths.get("audio"):
         out.update(master_indicators(paths["audio"]))
-    return out
+    return {k: _plain(v) for k, v in out.items()}
