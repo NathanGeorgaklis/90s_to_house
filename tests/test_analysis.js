@@ -1,0 +1,12 @@
+const DSP=require('../src/dsp-worker.js'),An=require('../src/analysis.js'),{synthSong}=require('./synth_song.js');
+const song=synthSong({bars:24}); const sep=DSP.separate(song.L,song.R,song.sr,{},()=>{});
+const barSec=4*60/song.bpm, nBars=song.bars;
+const ch=An.detectChords(sep,0,barSec,nBars); const truth=b=>{const [r,q]=song.prog[b%4];return An.NAMES[r]+(q==='min'?'m':'');};
+const correct=ch.filter((c,b)=>c.name===truth(b)).length;
+console.log('chords',ch.map(c=>c.name+(c.ok?'':'?')).join(' '));
+console.log('chord accuracy',correct+'/'+nBars, 'mean conf',(ch.reduce((a,c)=>a+c.conf,0)/nBars).toFixed(3));
+console.log('key',JSON.stringify(An.detectKey(sep)),'(truth: C major)');
+const va=An.vocalPerBar(sep,0,barSec,nBars); console.log('vocal/bar',va.map(v=>v.toFixed(1)).join(' '));
+const arr=An.arrange({va,chords:ch,nBars,intro:8,outro:8});
+console.log('blocks',arr.blocks.map(b=>b.type+':'+b.len).join(' '),'| runs',JSON.stringify(arr.runs),'| hook',arr.hookBar);
+console.log('builds at',arr.bars.map((b,i)=>b.build?i:-1).filter(i=>i>=0).join(','));

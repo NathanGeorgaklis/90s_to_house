@@ -1,0 +1,117 @@
+<section class="panel" id="deck" aria-label="Rework deck">
+  <h2>Deck <small id="engineState">beat only · no song loaded</small></h2>
+  <div class="now">
+    <div class="t" id="nowTitle">No song loaded</div>
+    <div class="s" id="nowSub">The groove plays on its own. Load a song (MP3, M4A, WAV) to rebuild it around its vocal.</div>
+  </div>
+
+  <div class="row">
+    <button class="btn primary" id="play" type="button">▶ Play</button>
+    <label class="btn file" for="fileIn">Load song<input id="fileIn" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg"></label>
+    <button class="chip" id="acap" type="button" aria-pressed="false">File is an a cappella</button>
+  </div>
+  <div class="prog" id="prog" hidden><div class="bar"><i id="progBar"></i></div><span id="progLabel"></span></div>
+
+  <div class="wave"><canvas id="wave" aria-label="Original song. Shaded bars are used in the rework; orange marks show where the vocal is. Tap to loop a section."></canvas></div>
+  <div class="wave"><canvas id="arr" aria-label="Arrangement of the rework. Tap a section to switch it between Groove, Drop and Break."></canvas></div>
+  <p class="note" id="arrNote" hidden>Top: the original song, with the vocal marked in orange. Bottom: the rebuilt track. Tap a section to switch it between Groove, Drop and Break, or <button class="linkbtn" id="autoArr" type="button">reset to automatic</button>.</p>
+
+  <div class="row">
+    <button class="btn" id="build" type="button" disabled>Build &amp; drop</button>
+    <button class="btn" id="brk" type="button" aria-pressed="false" disabled>Breakdown</button>
+    <button class="btn rec" id="rec" type="button">● Record</button>
+    <button class="btn" id="export" type="button" disabled>Export WAV</button>
+  </div>
+  <div class="steps" id="steps" aria-hidden="true"></div>
+  <canvas class="spec" id="spec" aria-hidden="true"></canvas>
+
+  <div class="readout">
+    <div class="cell"><span>Song tempo</span><b id="rSrc">—</b></div>
+    <div class="cell"><span>House tempo</span><b id="rTgt">127</b></div>
+    <div class="cell"><span>Key (rework)</span><b id="rKey">—</b></div>
+    <div class="cell"><span>Vocal</span><b id="rVox">—</b></div>
+    <div class="cell"><span>Length</span><b id="rLen">—</b></div>
+  </div>
+
+  <div class="group take" id="takeBox" hidden>
+    <h3 id="takeLabel">Your take</h3>
+    <audio id="takeAudio" controls></audio>
+    <div class="row"><button class="btn" id="saveTake" type="button">Save</button><span class="note" id="saveMsg"></span></div>
+  </div>
+
+  <div class="group">
+    <h3>2026 club sounds</h3>
+    <div class="chips" id="styles2026"></div>
+    <h3>Artist-inspired</h3>
+    <div class="chips" id="stylesartist"></div>
+    <p class="note">Artist-inspired presets imitate production traits described in press coverage of each artist. They use no samples from their records and aren't made or endorsed by the artists.</p>
+    <h3>Classic house</h3>
+    <div class="chips" id="stylesclassic"></div>
+    <p class="note" id="styleNote"></p>
+    <div class="row"><button class="btn" id="newBeat" type="button">New beat</button><span class="note" id="beatCode"></span></div>
+    <div class="pattern" id="pattern" aria-label="The generated beat, one bar of 16 steps"></div>
+    <p class="note">Every rework rolls its own beat within the chosen style: drum and percussion placement, bassline, chord rhythm and voicing, chop placement and sound design. Tap New beat for another, or a style chip to roll one in that style.</p>
+  </div>
+
+  <div class="group">
+    <h3>Rework</h3>
+    <div class="ctrls">
+      <div class="ctl"><label for="form">Form</label><select id="form"><option value="full" selected>Full rework (whole song)</option><option value="loop">Hook loop</option></select></div>
+      <div class="ctl"><label for="pitch">Vocal pitch</label><select id="pitch"><option value="natural" selected>Natural (keep original pitch)</option><option value="-2">−2 semitones</option><option value="-1">−1 semitone</option><option value="1">+1 semitone</option><option value="2">+2 semitones</option><option value="tempo">Speed-up (pitch follows tempo)</option></select></div>
+      <div class="ctl"><label for="harmony">Harmony</label><select id="harmony"><option value="song" selected>Follow the song's chords</option><option value="key">Fixed key progression</option></select></div>
+      <div class="ctl"><label for="intro">Intro</label><select id="intro"><option value="0">None</option><option value="8" selected>8 bars</option><option value="16">16 bars</option></select></div>
+      <div class="ctl"><label for="outro">Outro</label><select id="outro"><option value="0">None</option><option value="8" selected>8 bars</option><option value="16">16 bars</option></select></div>
+    </div>
+    <div class="row"><button class="chip" id="trim" type="button" aria-pressed="true">Shorten long instrumental gaps</button></div>
+    <div class="row" id="loopRow" hidden>
+      <label for="loopLen" class="note">Loop length</label>
+      <select id="loopLen"><option value="2">2 bars</option><option value="4" selected>4 bars</option><option value="8">8 bars</option></select>
+      <button class="btn sm" id="prevSec" type="button">◀ Section</button>
+      <button class="btn sm" id="nextSec" type="button">Section ▶</button>
+    </div>
+    <p class="note" id="sepNote"></p>
+    <p class="note" id="chordNote"></p>
+  </div>
+
+  <div class="group">
+    <h3>Tempo &amp; grid</h3>
+    <div class="ctrls">
+      <div class="ctl"><label for="tgt">House tempo <output id="tgtOut">127 BPM</output></label><input id="tgt" type="range" min="115" max="135" step="1" value="127"></div>
+    </div>
+    <div class="row">
+      <button class="btn sm" id="half" type="button" disabled>Song tempo ×½</button>
+      <button class="btn sm" id="dbl" type="button" disabled>Song tempo ×2</button>
+      <button class="btn sm" id="tap" type="button">Tap song tempo</button>
+      <button class="btn sm" id="tapUse" type="button">Use tapped tempo</button>
+      <button class="btn sm" id="shiftBeat" type="button" disabled>Move bar start +1 beat</button>
+      <button class="btn sm" id="nudgeL" type="button" disabled>Nudge −10 ms</button>
+      <button class="btn sm" id="nudgeR" type="button" disabled>Nudge +10 ms</button>
+    </div>
+    <p class="note">Tempo and beat position are estimated from the audio. If the vocal phrases land off the beat, use Nudge or Move bar start. If the tempo is wrong by double or half, use ×2 or ×½.</p>
+  </div>
+
+  <div class="group">
+    <h3>Fixed key progression</h3>
+    <div class="ctrls">
+      <div class="ctl"><label for="key">Key</label><select id="key"></select></div>
+      <div class="ctl"><label for="mode">Scale</label><select id="mode"><option value="minor">Minor</option><option value="major">Major</option></select></div>
+    </div>
+    <p class="note">Used with no song loaded, or when Harmony is set to Fixed key progression.</p>
+  </div>
+
+  <div class="group">
+    <h3>Mix</h3>
+    <div class="ctrls">
+      <div class="ctl"><label for="mVox">Vocal <output id="mVoxO"></output></label><input id="mVox" type="range" min="0" max="1.4" step="0.01" value="0.9"></div>
+      <div class="ctl"><label for="mLow">Vocal low cut <output id="mLowO"></output></label><input id="mLow" type="range" min="0" max="1" step="0.01" value="0.25"></div>
+      <div class="ctl"><label for="mDrums">Drums <output id="mDrumsO"></output></label><input id="mDrums" type="range" min="0" max="1" step="0.01" value="0.8"></div>
+      <div class="ctl"><label for="mPerc">Percussion <output id="mPercO"></output></label><input id="mPerc" type="range" min="0" max="1" step="0.01" value="0.7"></div>
+      <div class="ctl"><label for="mChops">Vocal chops <output id="mChopsO"></output></label><input id="mChops" type="range" min="0" max="1" step="0.01" value="0.6"></div>
+      <div class="ctl"><label for="mBass">Bass <output id="mBassO"></output></label><input id="mBass" type="range" min="0" max="1" step="0.01" value="0.6"></div>
+      <div class="ctl"><label for="mChords">Chords &amp; lead <output id="mChordsO"></output></label><input id="mChords" type="range" min="0" max="1" step="0.01" value="0.4"></div>
+      <div class="ctl"><label for="mPump">Sidechain pump <output id="mPumpO"></output></label><input id="mPump" type="range" min="0" max="0.9" step="0.01" value="0.7"></div>
+      <div class="ctl"><label for="mFilt">Master filter <output id="mFiltO"></output></label><input id="mFilt" type="range" min="0" max="1" step="0.005" value="1"></div>
+    </div>
+  </div>
+  <p class="note">On iPhone, switch off silent mode to hear audio. Analysis runs on your device and can take 10–30 seconds for a full song.</p>
+</section>
